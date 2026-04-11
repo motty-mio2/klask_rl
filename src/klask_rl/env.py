@@ -21,14 +21,15 @@ class KlaskEnv(gym.Env):
         self.range_x = np.array([-0.1511, 0.1511])
         self.range_y = np.array([-0.0976, 0.0976])
         
-        # 穴の定義 (中心座標と半径)
+        # 穴の定義
         self.hole_player_pos = np.array([0, -0.192])
         self.hole_opponent_pos = np.array([0, 0.192])
-        self.hole_radius = 0.018      # 18mm
-        self.striker_radius = 0.0074  # 7.4mm
-        self.puck_radius = 0.0075     # 7.5mm (Diameter 15mm)
+        self.hole_radius = 0.018
+        self.striker_radius = 0.0074
+        self.puck_radius = 0.0075
         
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+        # [s_x, s_y, s_vx, s_vy, p_x, p_y, p_vx, p_vy]
         self.observation_space = spaces.Box(low=-5.0, high=5.0, shape=(8,), dtype=np.float32)
 
     def _get_obs(self):
@@ -38,7 +39,7 @@ class KlaskEnv(gym.Env):
         p_vel = self.data.qvel[2:4]
         
         obs = np.concatenate([
-            (s_pos - np.array([0, -0.105])) / 0.2, # 正規化を微調整
+            (s_pos - np.array([0, -0.105])) / 0.2,
             s_vel,
             p_pos / 0.3,
             p_vel
@@ -49,15 +50,15 @@ class KlaskEnv(gym.Env):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
         
-        # ボールをランダムな位置に配置
+        # ボールを自陣〜相手陣のランダムな位置に配置
         self.data.qpos[2] = self.np_random.uniform(-0.15, 0.15)
-        self.data.qpos[3] = self.np_random.uniform(-0.1, 0.18)
+        self.data.qpos[3] = self.np_random.uniform(-0.1, 0.2)
         
-        # ボールに初速
+        # 軽く初速を与える
         self.data.qvel[2] = self.np_random.uniform(-0.5, 0.5)
-        self.data.qvel[3] = self.np_random.uniform(-1.0, 0.0)
+        self.data.qvel[3] = self.np_random.uniform(-0.5, 0.5)
         
-        mujoco.mj_forward(self.model, self.data)
+        mujoco.mj_forward(self.model, self.model_data if hasattr(self, 'model_data') else self.data)
         return self._get_obs(), {}
 
     def step(self, action):
@@ -67,45 +68,45 @@ class KlaskEnv(gym.Env):
         self.data.ctrl[0] = target_x
         self.data.ctrl[1] = target_y
         
-        prev_puck_dist_to_goal = np.linalg.norm(self.data.qpos[2:4] - self.hole_opponent_pos)
-        
+        # 物理シミュレーションを複数回進める
         for _ in range(5): 
             mujoco.mj_step(self.model, self.data)
         
         obs = self._get_obs()
         s_pos = self.data.qpos[0:2]
+        actual_s_pos = s_pos + np.array([0, -0.105])
         p_pos = self.data.qpos[2:4]
         
-        reward = 0
+        # --- 報酬設計 (Reward Engineering) ---
+        reward = 0.0
         terminated = False
         
-        # 1. パッキが相手の穴（ゴール）に入ったか
+        # 1. 時間ペナルティ (早くゴールさせる)
+        reward -= 0.05
+        
+        # 2. 接触ボーナス
+        dist_s_to_p = np.linalg.norm(actual_s_pos - p_pos)
+        if dist_s_to_p < (self.striker_radius + self.puck_radius + 0.005):
+            reward += 1.0 # 強く当たればより多くのステップで報酬が入る
+        
+        # 3. ゴール報酬 (エピソード終了)
         dist_puck_to_goal = np.linalg.norm(p_pos - self.hole_opponent_pos)
         if dist_puck_to_goal < self.hole_radius:
-            reward += 200.0 # Goal!
+            reward += 100.0 # Opponent Goal!
             terminated = True
-        
-        # 2. ストライカーが自分の穴（Klask!）に入ったか
-        # ストライカーの中心座標 pos="0 -0.105" に対する相対座標 qpos[0:2] から計算
-        actual_s_pos = s_pos + np.array([0, -0.105])
+            
+        # 4. Klaskペナルティ (自陣の穴に落ちた)
         dist_striker_to_hole = np.linalg.norm(actual_s_pos - self.hole_player_pos)
         if dist_striker_to_hole < (self.hole_radius - self.striker_radius * 0.5):
-            reward -= 150.0 # Klask!
+            reward -= 50.0 # Klask!
             terminated = True
-            
-        # 3. 誘導報酬: パッキを相手の穴に近づける
-        reward += (prev_puck_dist_to_goal - dist_puck_to_goal) * 20.0
-        
-        # 4. 誘導報酬: パッキに近づく
-        dist_s_to_p = np.linalg.norm(actual_s_pos - p_pos)
+
+        # 5. 誘導報酬 (微量: 学習を全く進まないのを防ぐ)
         reward -= dist_s_to_p * 0.1
-        
-        # 自陣ゴール（穴以外）
-        if p_pos[1] < -0.21:
-            reward -= 50.0
-            terminated = True
             
-        truncated = self.data.time > 15.0
+        # 6. タイムアウト
+        truncated = self.data.time > 10.0
+        
         return obs, reward, terminated, truncated, {}
 
     def render(self):
