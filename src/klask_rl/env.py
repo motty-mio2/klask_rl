@@ -51,9 +51,13 @@ class KlaskEnv(gym.Env):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
         
-        # ボールを少しランダムな位置に配置
-        self.data.qpos[2] = self.np_random.uniform(-0.1, 0.1) # puck x
-        self.data.qpos[3] = self.np_random.uniform(0.05, 0.15) # puck y
+        # ボールをランダムな位置に配置 (自陣・相手陣含む広範囲)
+        self.data.qpos[2] = self.np_random.uniform(-0.15, 0.15) # puck x
+        self.data.qpos[3] = self.np_random.uniform(-0.1, 0.2)   # puck y
+        
+        # ボールに初速を与える (静止したままだと学習が遅いため)
+        self.data.qvel[2] = self.np_random.uniform(-0.5, 0.5) # vx
+        self.data.qvel[3] = self.np_random.uniform(-1.0, 0.0) # vy (手前に向かってくる)
         
         mujoco.mj_forward(self.model, self.data)
         return self._get_obs(), {}
@@ -66,8 +70,8 @@ class KlaskEnv(gym.Env):
         self.data.ctrl[0] = target_x
         self.data.ctrl[1] = target_y
         
-        # 以前のパッキ位置を保存
-        prev_puck_pos = self.data.qpos[2:4].copy()
+        # 以前の状態
+        prev_dist = np.linalg.norm(self.data.qpos[0:2] - self.data.qpos[2:4])
         
         # 物理シミュレーションを複数回進める
         for _ in range(5): 
@@ -75,42 +79,38 @@ class KlaskEnv(gym.Env):
         
         obs = self._get_obs()
         
-        # 状態の取得
         s_pos = self.data.qpos[0:2]
         p_pos = self.data.qpos[2:4]
         p_vel = self.data.qvel[2:4]
         
-        # --- 報酬設計 (Reward Engineering) ---
         reward = 0
         
-        # 1. パッキに近づく報酬 (学習初期の誘導)
-        dist_to_puck = np.linalg.norm(s_pos - p_pos)
-        reward -= dist_to_puck * 0.1
+        # 1. パッキに近づく報酬 (改善: 前のステップとの比較)
+        curr_dist = np.linalg.norm(s_pos - p_pos)
+        reward += (prev_dist - curr_dist) * 10.0 # 近づいたら報酬、離れたら罰
         
-        # 2. パッキが相手側（奥）に動いた時の報酬
-        puck_vel_y = p_vel[1] # Y軸正の方向が相手側
-        if p_pos[1] > -0.1: # 自陣の半分より奥にパッキがある時
-            reward += max(0, -puck_vel_y) * 2.0 # 相手側に強く弾けば報酬
+        # 2. パッキが相手側（奥）に動いた時の報酬 (強化)
+        if p_pos[1] > -0.1: # 中央付近か奥にある時
+            # 相手側への速度に大きな報酬
+            reward += max(0, p_vel[1]) * 5.0
         
-        # 3. パッキの位置による報酬 (奥にあるほど良い)
-        reward += (0.1 - p_pos[1]) * 0.5
+        # 3. ボールを触ったボーナス (衝突判定)
+        if curr_dist < 0.023: # 半径の合計に近い
+             reward += 1.0
         
-        # 4. 生存報酬
-        reward += 0.01
+        # 4. 生存/タイムペナルティ (早くゴールさせる)
+        reward -= 0.01
         
-        # 5. 終了判定と大きな報酬/ペナルティ
+        # 5. 終了判定
         terminated = False
-        # 相手ゴール (Y=0.21)
-        if p_pos[1] > 0.2:
-            reward += 50.0
+        if p_pos[1] > 0.2: # 相手ゴール
+            reward += 100.0
             terminated = True
-        # 自陣ゴール (Y=-0.21)
-        elif p_pos[1] < -0.2:
+        elif p_pos[1] < -0.2: # 自陣ゴール/はみ出し
             reward -= 50.0
             terminated = True
         
-        # タイムアウト
-        truncated = self.data.time > 10.0 # 10秒でリセット
+        truncated = self.data.time > 15.0 # 15秒
         
         return obs, reward, terminated, truncated, {}
 
