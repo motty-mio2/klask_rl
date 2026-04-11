@@ -21,23 +21,21 @@
         <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" castshadow="true"/>
         <geom name="floor" type="plane" size="1 1 0.01" pos="0 0 -0.05" material="grid"/>
         
-        <!-- ボード (中心から 左右158.5mm, 前後210mmの半面) -->
+        <!-- ボード -->
         <body name="board" pos="0 0 0">
             <geom type="mesh" mesh="board_mesh" material="board_mat" contype="0" conaffinity="0"/>
-            <!-- 物理判定用 (厚み1cm) -->
             <geom type="box" size="0.1585 0.210 0.01" pos="0 -0.105 -0.01" rgba="0 0 0 0"/>
+            
+            <!-- 穴 (Goal Holes) -->
+            <site name="hole_player" pos="0 -0.192 0.001" size="0.018 0.001" type="cylinder" rgba="0 0 0 0.8"/>
+            <site name="hole_opponent" pos="0 0.192 0.001" size="0.018 0.001" type="cylinder" rgba="0 0 0 0.8"/>
         </body>
         
         <!-- ストライカー -->
-        <!-- 初期位置を自陣中央 (X=0, Y=-105mm) に設定 -->
         <body name="striker" pos="0 -0.105 0.001">
-            <!-- X範囲: ± (158.5 - 7.4) = ± 151.1mm -->
             <joint name="striker_x" type="slide" axis="1 0 0" range="-0.1511 0.1511" limited="true" damping="30"/>
-            <!-- Y範囲: ± (105 - 7.4) = ± 97.6mm -->
             <joint name="striker_y" type="slide" axis="0 1 0" range="-0.0976 0.0976" limited="true" damping="30"/>
-            
             <geom type="mesh" mesh="striker_mesh" material="striker_mat" contype="0" conaffinity="0"/>
-            <!-- 半径を 7.4mm (直径14.8mm) に変更 -->
             <geom type="cylinder" size="0.0074 0.005" pos="0 0 0.005" mass="0.1" friction="0.1 0.005 0.0001"/>
         </body>
 

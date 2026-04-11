@@ -11,38 +11,36 @@ class KlaskEnv(gym.Env):
     def __init__(self, render_mode=None):
         super().__init__()
         
-        # XMLの読み込み
         xml_path = os.path.join(os.path.dirname(__file__), "../../model/klask.xml")
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)
         
-        # レンダリング設定
         self.render_mode = render_mode
         self.viewer = None
         
-        # 動作範囲 (正規化用)
         self.range_x = np.array([-0.1511, 0.1511])
         self.range_y = np.array([-0.0976, 0.0976])
         
-        # 行動空間: ストライカーの目標位置 (dx, dy) -1.0 ~ 1.0 に正規化
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+        # 穴の定義 (中心座標と半径)
+        self.hole_player_pos = np.array([0, -0.192])
+        self.hole_opponent_pos = np.array([0, 0.192])
+        self.hole_radius = 0.018
+        self.striker_radius = 0.0074
+        self.puck_radius = 0.015 # 仮の半径
         
-        # 観測空間: 
-        # [striker_x, striker_y, striker_vx, striker_vy, puck_x, puck_y, puck_vx, puck_vy]
-        # すべて正規化した値とする
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
         self.observation_space = spaces.Box(low=-5.0, high=5.0, shape=(8,), dtype=np.float32)
 
     def _get_obs(self):
-        # 内部状態から正規化した観測値を取得
-        s_pos = self.data.qpos[0:2] # [x, y] slider joints
+        s_pos = self.data.qpos[0:2]
         s_vel = self.data.qvel[0:2]
-        p_pos = self.data.qpos[2:4] # puck x, y (puck_free joint)
+        p_pos = self.data.qpos[2:4]
         p_vel = self.data.qvel[2:4]
         
         obs = np.concatenate([
-            (s_pos - np.mean(self.range_x)) / (self.range_x[1] - self.range_x[0]),
+            (s_pos - np.array([0, -0.105])) / 0.2, # 正規化を微調整
             s_vel,
-            p_pos / 0.3, # 盤面サイズでおおよそ正規化
+            p_pos / 0.3,
             p_vel
         ]).astype(np.float32)
         return obs
@@ -51,67 +49,63 @@ class KlaskEnv(gym.Env):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
         
-        # ボールをランダムな位置に配置 (自陣・相手陣含む広範囲)
-        self.data.qpos[2] = self.np_random.uniform(-0.15, 0.15) # puck x
-        self.data.qpos[3] = self.np_random.uniform(-0.1, 0.2)   # puck y
+        # ボールをランダムな位置に配置
+        self.data.qpos[2] = self.np_random.uniform(-0.15, 0.15)
+        self.data.qpos[3] = self.np_random.uniform(-0.1, 0.18)
         
-        # ボールに初速を与える (静止したままだと学習が遅いため)
-        self.data.qvel[2] = self.np_random.uniform(-0.5, 0.5) # vx
-        self.data.qvel[3] = self.np_random.uniform(-1.0, 0.0) # vy (手前に向かってくる)
+        # ボールに初速
+        self.data.qvel[2] = self.np_random.uniform(-0.5, 0.5)
+        self.data.qvel[3] = self.np_random.uniform(-1.0, 0.0)
         
         mujoco.mj_forward(self.model, self.data)
         return self._get_obs(), {}
 
     def step(self, action):
-        # アクションを実際の座標範囲に変換して適用
         target_x = action[0] * (self.range_x[1] - self.range_x[0]) / 2
         target_y = action[1] * (self.range_y[1] - self.range_y[0]) / 2
         
         self.data.ctrl[0] = target_x
         self.data.ctrl[1] = target_y
         
-        # 以前の状態
-        prev_dist = np.linalg.norm(self.data.qpos[0:2] - self.data.qpos[2:4])
+        prev_puck_dist_to_goal = np.linalg.norm(self.data.qpos[2:4] - self.hole_opponent_pos)
         
-        # 物理シミュレーションを複数回進める
         for _ in range(5): 
             mujoco.mj_step(self.model, self.data)
         
         obs = self._get_obs()
-        
         s_pos = self.data.qpos[0:2]
         p_pos = self.data.qpos[2:4]
-        p_vel = self.data.qvel[2:4]
         
         reward = 0
-        
-        # 1. パッキに近づく報酬 (改善: 前のステップとの比較)
-        curr_dist = np.linalg.norm(s_pos - p_pos)
-        reward += (prev_dist - curr_dist) * 10.0 # 近づいたら報酬、離れたら罰
-        
-        # 2. パッキが相手側（奥）に動いた時の報酬 (強化)
-        if p_pos[1] > -0.1: # 中央付近か奥にある時
-            # 相手側への速度に大きな報酬
-            reward += max(0, p_vel[1]) * 5.0
-        
-        # 3. ボールを触ったボーナス (衝突判定)
-        if curr_dist < 0.023: # 半径の合計に近い
-             reward += 1.0
-        
-        # 4. 生存/タイムペナルティ (早くゴールさせる)
-        reward -= 0.01
-        
-        # 5. 終了判定
         terminated = False
-        if p_pos[1] > 0.2: # 相手ゴール
-            reward += 100.0
+        
+        # 1. パッキが相手の穴（ゴール）に入ったか
+        dist_puck_to_goal = np.linalg.norm(p_pos - self.hole_opponent_pos)
+        if dist_puck_to_goal < self.hole_radius:
+            reward += 200.0 # Goal!
             terminated = True
-        elif p_pos[1] < -0.2: # 自陣ゴール/はみ出し
+        
+        # 2. ストライカーが自分の穴（Klask!）に入ったか
+        # ストライカーの中心座標 pos="0 -0.105" に対する相対座標 qpos[0:2] から計算
+        actual_s_pos = s_pos + np.array([0, -0.105])
+        dist_striker_to_hole = np.linalg.norm(actual_s_pos - self.hole_player_pos)
+        if dist_striker_to_hole < (self.hole_radius - self.striker_radius * 0.5):
+            reward -= 150.0 # Klask!
+            terminated = True
+            
+        # 3. 誘導報酬: パッキを相手の穴に近づける
+        reward += (prev_puck_dist_to_goal - dist_puck_to_goal) * 20.0
+        
+        # 4. 誘導報酬: パッキに近づく
+        dist_s_to_p = np.linalg.norm(actual_s_pos - p_pos)
+        reward -= dist_s_to_p * 0.1
+        
+        # 自陣ゴール（穴以外）
+        if p_pos[1] < -0.21:
             reward -= 50.0
             terminated = True
-        
-        truncated = self.data.time > 15.0 # 15秒
-        
+            
+        truncated = self.data.time > 15.0
         return obs, reward, terminated, truncated, {}
 
     def render(self):
