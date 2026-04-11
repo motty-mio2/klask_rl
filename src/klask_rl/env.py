@@ -24,9 +24,9 @@ class KlaskEnv(gym.Env):
         # 穴の定義 (中心座標と半径)
         self.hole_player_pos = np.array([0, -0.192])
         self.hole_opponent_pos = np.array([0, 0.192])
-        self.hole_radius = 0.018
-        self.striker_radius = 0.0074
-        self.puck_radius = 0.015 # 仮の半径
+        self.hole_radius = 0.018      # 18mm
+        self.striker_radius = 0.0074  # 7.4mm
+        self.puck_radius = 0.0075     # 7.5mm (Diameter 15mm)
         
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
         self.observation_space = spaces.Box(low=-5.0, high=5.0, shape=(8,), dtype=np.float32)
