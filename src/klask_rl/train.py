@@ -29,8 +29,8 @@ def train():
         )
     
     print("Starting Training...")
-    # 20万ステップ学習
-    model.learn(total_timesteps=200000, progress_bar=True)
+    # 40万ステップ学習
+    model.learn(total_timesteps=400000, progress_bar=True)
     
     # モデルの保存
     model.save("models/klask_ppo_model")
