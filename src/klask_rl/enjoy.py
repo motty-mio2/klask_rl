@@ -19,7 +19,7 @@ def main():
     if not glfw.init():
         return
 
-    window = glfw.create_window(1200, 900, "Klask AI Self-Play Mode", None, None)
+    window = glfw.create_window(1200, 900, "Klask AI Minimal I/O Mode", None, None)
     if not window:
         glfw.terminate()
         return
@@ -31,7 +31,6 @@ def main():
     scene = mujoco.MjvScene(env.model, maxgeom=1000)
     context = mujoco.MjrContext(env.model, mujoco.mjtFontScale.mjFONTSCALE_150)
 
-    # 視点を少し調整
     cam.azimuth = 90
     cam.elevation = -45
     cam.distance = 1.0
@@ -39,10 +38,10 @@ def main():
 
     obs, _ = env.reset()
     
-    print("Self-Play Mode Started. AI vs AI.")
+    print("Enjoy Mode: 4 inputs, 2 outputs. Press ESC to exit.")
 
     while not glfw.window_should_close(window):
-        # 1つのモデルが 4次元アクション(P1 & P2)を同時出力
+        # AI モデル (4-in, 2-out) による推論
         action, _states = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
         
