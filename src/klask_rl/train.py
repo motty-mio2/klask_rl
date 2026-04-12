@@ -1,8 +1,8 @@
+import os
+
+from env import KlaskEnv
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
-from env import KlaskEnv
-import os
-from typing import Any
 
 
 class SelfPlayCallback(BaseCallback):
@@ -37,9 +37,7 @@ def train() -> None:
     )
 
     print("Starting Self-Play Training (4-in, 2-out)...")
-    model.learn(
-        total_timesteps=1000000, callback=SelfPlayCallback(), progress_bar=True
-    )
+    model.learn(total_timesteps=1000000, callback=SelfPlayCallback(), progress_bar=True)
 
     model.save("models/klask_ppo_model")
     print("Training Finished!")

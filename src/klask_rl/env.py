@@ -1,21 +1,22 @@
-import gymnasium as gym
-from gymnasium import spaces
-import mujoco  # type: ignore
-import numpy as np
 import os
 from typing import Any, SupportsFloat
+
+import gymnasium as gym
+import mujoco  # type: ignore
+import numpy as np
+from gymnasium import spaces
 
 
 class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
     """Klask 環境: 壁張り付き解消・ボール追従強化版"""
 
-    metadata: dict[str, Any] = {
-        "render_modes": ["human", "rgb_array"],
-        "render_fps": 50,
-    }
-
     def __init__(self, render_mode: str | None = None) -> None:
         super().__init__()
+
+        self.metadata: dict[str, Any] = {
+            "render_modes": ["human", "rgb_array"],
+            "render_fps": 50,
+        }
 
         xml_path = os.path.join(os.path.dirname(__file__), "../../model/klask.xml")
         self.model = mujoco.MjModel.from_xml_path(xml_path)

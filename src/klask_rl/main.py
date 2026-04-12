@@ -1,7 +1,8 @@
-import mujoco  # type: ignore
-import glfw  # type: ignore
-import numpy as np
 import os
+
+import glfw  # type: ignore
+import mujoco  # type: ignore
+import numpy as np
 
 
 def main() -> None:

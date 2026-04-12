@@ -5,26 +5,26 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "gymnasium>=1.2.3",
-    "mujoco>=3.6.0",
-    "mypy>=1.20.0",
-    "rich>=14.3.4",
-    "ruff>=0.15.10",
-    "shimmy>=2.0.1",
-    "stable-baselines3>=2.8.0",
-    "tensorboard>=2.20.0",
-    "tqdm>=4.67.3",
+  "gymnasium>=1.2.3",
+  "mujoco>=3.6.0",
+  "mypy>=1.20.0",
+  "rich>=14.3.4",
+  "ruff>=0.15.10",
+  "shimmy>=2.0.1",
+  "stable-baselines3>=2.8.0",
+  "tensorboard>=2.20.0",
+  "tqdm>=4.67.3",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.20.0",
+  "ruff>=0.15.10",
 ]
 
 [build-system]
 requires = ["uv_build>=0.11.5,<0.12.0"]
 build-backend = "uv_build"
-
-[dependency-groups]
-dev = [
-    "mypy>=1.20.0",
-    "ruff>=0.15.10",
-]
 
 [tool.mypy]
 python_version = "3.10"
@@ -34,5 +34,4 @@ strict = true
 line-length = 88
 
 [tool.ruff.lint]
-extend-select = ["E", "F", "RUF", "W", "N", "UP"]
-
+extend-select = ["E", "F", "I", "RUF", "W", "N", "UP"]

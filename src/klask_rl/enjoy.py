@@ -1,11 +1,12 @@
-import mujoco  # type: ignore
-import glfw  # type: ignore
-import numpy as np
 import os
 import time
-from stable_baselines3 import PPO
-from env import KlaskEnv
 from typing import Any
+
+import glfw  # type: ignore
+import mujoco  # type: ignore
+import numpy as np
+from env import KlaskEnv
+from stable_baselines3 import PPO
 
 # マウス操作用のグローバル変数
 button_left = False
@@ -51,7 +52,9 @@ def main() -> None:
     # マウスコールバック
     def mouse_button(window: Any, button: int, act: int, mods: int) -> None:
         global button_left, button_middle, button_right
-        button_left = glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS
+        button_left = (
+            glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS
+        )
         button_middle = (
             glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_MIDDLE) == glfw.PRESS
         )
