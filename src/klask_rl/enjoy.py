@@ -1,10 +1,11 @@
-import mujoco
-import glfw
-import numpy as np
 import os
 import time
-from stable_baselines3 import PPO
+
+import glfw
+import mujoco
+import numpy as np
 from env import KlaskEnv
+from stable_baselines3 import PPO
 
 # マウス操作用のグローバル変数
 button_left = False
@@ -13,10 +14,11 @@ button_right = False
 lastx = 0
 lasty = 0
 
+
 def main():
     env = KlaskEnv()
     model_path = "models/klask_ppo_model"
-    
+
     if not os.path.exists(model_path + ".zip"):
         print("Error: Model not found.")
         return
@@ -49,9 +51,15 @@ def main():
     # マウスコールバック
     def mouse_button(window, button, act, mods):
         global button_left, button_middle, button_right
-        button_left = (glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS)
-        button_middle = (glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_MIDDLE) == glfw.PRESS)
-        button_right = (glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_RIGHT) == glfw.PRESS)
+        button_left = (
+            glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS
+        )
+        button_middle = (
+            glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_MIDDLE) == glfw.PRESS
+        )
+        button_right = (
+            glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_RIGHT) == glfw.PRESS
+        )
 
     def mouse_move(window, xpos, ypos):
         global lastx, lasty
@@ -64,26 +72,34 @@ def main():
             return
 
         width, height = glfw.get_window_size(window)
-        
-        # どのボタンが押されているかでカメラ操作を切り替え
-        mod_shift = (glfw.get_key(window, glfw.KEY_LEFT_SHIFT) == glfw.PRESS or
-                     glfw.get_key(window, glfw.KEY_RIGHT_SHIFT) == glfw.PRESS)
 
-        action = mujoco.mjtMouse.mjMOUSE_ZOOM if button_right else \
-                 mujoco.mjtMouse.mjMOUSE_MOVE_H if (button_left and mod_shift) else \
-                 mujoco.mjtMouse.mjMOUSE_ROTATE_H
-        
-        mujoco.mjv_moveCamera(env.model, action, dx/height, dy/height, scene, cam)
+        # どのボタンが押されているかでカメラ操作を切り替え
+        mod_shift = (
+            glfw.get_key(window, glfw.KEY_LEFT_SHIFT) == glfw.PRESS
+            or glfw.get_key(window, glfw.KEY_RIGHT_SHIFT) == glfw.PRESS
+        )
+
+        action = (
+            mujoco.mjtMouse.mjMOUSE_ZOOM
+            if button_right
+            else mujoco.mjtMouse.mjMOUSE_MOVE_H
+            if (button_left and mod_shift)
+            else mujoco.mjtMouse.mjMOUSE_ROTATE_H
+        )
+
+        mujoco.mjv_moveCamera(env.model, action, dx / height, dy / height, scene, cam)
 
     def scroll(window, xoffset, ypos):
-        mujoco.mjv_moveCamera(env.model, mujoco.mjtMouse.mjMOUSE_ZOOM, 0, -0.05*ypos, scene, cam)
+        mujoco.mjv_moveCamera(
+            env.model, mujoco.mjtMouse.mjMOUSE_ZOOM, 0, -0.05 * ypos, scene, cam
+        )
 
     glfw.set_mouse_button_callback(window, mouse_button)
     glfw.set_cursor_pos_callback(window, mouse_move)
     glfw.set_scroll_callback(window, scroll)
 
     obs, _ = env.reset()
-    
+
     print("\n--- Klask AI Free View Mode ---")
     print("Mouse Left: Rotate")
     print("Mouse Right / Scroll: Zoom")
@@ -93,19 +109,24 @@ def main():
     while not glfw.window_should_close(window):
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
-        
+
         if terminated or truncated:
             obs, _ = env.reset()
 
         viewport = glfw.get_framebuffer_size(window)
-        mujoco.mjv_updateScene(env.model, env.data, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
-        mujoco.mjr_render(mujoco.MjrRect(0, 0, viewport[0], viewport[1]), scene, context)
-        
+        mujoco.mjv_updateScene(
+            env.model, env.data, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene
+        )
+        mujoco.mjr_render(
+            mujoco.MjrRect(0, 0, viewport[0], viewport[1]), scene, context
+        )
+
         glfw.swap_buffers(window)
         glfw.poll_events()
         time.sleep(0.01)
 
     glfw.terminate()
+
 
 if __name__ == "__main__":
     main()
