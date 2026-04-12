@@ -5,7 +5,7 @@ import numpy as np
 import os
 
 class KlaskEnv(gym.Env):
-    """Klask 環境: 極小入出力版 (Input:4, Output:2)"""
+    """Klask 自己対戦環境: 追いかけ報酬 & 速度報酬強化版"""
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
 
     def __init__(self, render_mode=None):
@@ -15,98 +15,106 @@ class KlaskEnv(gym.Env):
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)
         
+        # ボールの摩擦を極限まで下げて滑りやすくする
+        puck_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'puck')
+        self.model.geom_friction[puck_id] = [0.005, 0.005, 0.0001]
+        
         self.render_mode = render_mode
         self.viewer = None
+        self.opponent_policy = None
         
         # 定数
         self.range_x = np.array([-0.1511, 0.1511])
         self.range_y = np.array([-0.0976, 0.0976])
-        self.hole_player_pos = np.array([0, -0.192])
-        self.hole_opponent_pos = np.array([0, 0.192])
+        self.hole_p1 = np.array([0, -0.192])
+        self.hole_p2 = np.array([0, 0.192])
         self.hole_radius = 0.018
         
-        # 行動空間: [目標X, 目標Y] (-1.0 ~ 1.0)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
-        
-        # 観測空間: [ボールX, ボールY, 自身のX, 自身のY]
         self.observation_space = spaces.Box(low=-2.0, high=2.0, shape=(4,), dtype=np.float32)
-
-    def _get_obs(self):
-        # ボールの位置 (全体座標系)
-        p_pos = self.data.qpos[4:6]
-        # 自身の位置 (初期位置 0, -0.105 からの相対座標)
-        s_pos = self.data.qpos[0:2]
-        actual_s_pos = s_pos + np.array([0, -0.105])
         
-        # おおよそ -1 ~ 1 に正規化して返す
-        obs = np.array([
-            p_pos[0] / 0.16,
-            p_pos[1] / 0.21,
-            actual_s_pos[0] / 0.16,
-            actual_s_pos[1] / 0.21
-        ], dtype=np.float32)
-        return obs
+        self.prev_action = np.zeros(2)
+
+    def _get_obs_p1(self):
+        p_pos = self.data.qpos[4:6]
+        s1_pos = self.data.qpos[0:2] + np.array([0, -0.105])
+        return np.array([p_pos[0]/0.16, p_pos[1]/0.21, s1_pos[0]/0.16, s1_pos[1]/0.21], dtype=np.float32)
+
+    def _get_obs_p2(self):
+        p_pos = self.data.qpos[4:6]
+        s2_pos = self.data.qpos[2:4] + np.array([0, 0.105])
+        return np.array([-p_pos[0]/0.16, -p_pos[1]/0.21, -s2_pos[0]/0.16, -s2_pos[1]/0.21], dtype=np.float32)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
-        
-        # ボールを中央付近に配置
+        # ボールをプレイヤーに近い位置に配置して接触しやすくする
         self.data.qpos[4] = self.np_random.uniform(-0.1, 0.1)
-        self.data.qpos[5] = self.np_random.uniform(-0.05, 0.15)
-        
+        self.data.qpos[5] = self.np_random.uniform(-0.1, 0.1)
         mujoco.mj_forward(self.model, self.data)
-        return self._get_obs(), {}
+        self.prev_action = np.zeros(2)
+        return self._get_obs_p1(), {}
 
     def step(self, action):
-        # P1のアクション適用
+        # 以前の状態
+        p_pos_before = self.data.qpos[4:6].copy()
+        s1_pos_before = self.data.qpos[0:2] + np.array([0, -0.105])
+        dist_before = np.linalg.norm(s1_pos_before - p_pos_before)
+
+        # アクション適用
         self.data.ctrl[0] = action[0] * (self.range_x[1] - self.range_x[0]) / 2
         self.data.ctrl[1] = action[1] * (self.range_y[1] - self.range_y[0]) / 2
         
-        # 相手側(P2)はボールを軽く追いかけるだけの簡易的な動きをさせる
-        p_pos = self.data.qpos[4:6]
-        self.data.ctrl[2] = np.clip(p_pos[0], self.range_x[0], self.range_x[1])
-        self.data.ctrl[3] = np.clip(p_pos[1] - 0.105, self.range_y[0], self.range_y[1])
+        if self.opponent_policy is not None:
+            obs_p2 = self._get_obs_p2()
+            act_p2, _ = self.opponent_policy.predict(obs_p2, deterministic=True)
+            self.data.ctrl[2] = -act_p2[0] * (self.range_x[1] - self.range_x[0]) / 2
+            self.data.ctrl[3] = -act_p2[1] * (self.range_y[1] - self.range_y[0]) / 2
 
         reward = 0.0
         terminated = False
-        contact_event = False
+        p1_hit = False
+        max_p_speed = 0.0
         
         for _ in range(5):
             mujoco.mj_step(self.model, self.data)
-            
             p_pos = self.data.qpos[4:6]
-            actual_s_pos = self.data.qpos[0:2] + np.array([0, -0.105])
+            p_vel = self.data.qvel[4:6]
+            s1_pos = self.data.qpos[0:2] + np.array([0, -0.105])
+            s2_pos = self.data.qpos[2:4] + np.array([0, 0.105])
             
-            # ゴール判定 (中心座標ベース)
-            if np.linalg.norm(p_pos - self.hole_opponent_pos) < self.hole_radius:
-                reward = 500.0 # P1 Goal!
-                terminated = True
-                break
-            if np.linalg.norm(p_pos - self.hole_player_pos) < self.hole_radius:
-                reward = -200.0 # P1 Goaled (P2 hit)
-                terminated = True
-                break
+            # ゴール・落下
+            if np.linalg.norm(p_pos - self.hole_p2) < self.hole_radius: reward += 2000.0; terminated = True; break
+            if np.linalg.norm(p_pos - self.hole_p1) < self.hole_radius: reward -= 1000.0; terminated = True; break
+            if np.linalg.norm(s1_pos - self.hole_p1) < self.hole_radius: reward -= 2000.0; terminated = True; break
+            if np.linalg.norm(s2_pos - self.hole_p2) < self.hole_radius: reward += 1000.0; terminated = True; break
             
-            # 自爆判定 (Klask!)
-            if np.linalg.norm(actual_s_pos - self.hole_player_pos) < self.hole_radius:
-                reward = -500.0
-                terminated = True
-                break
-                
-            # 接触チェック
-            if np.linalg.norm(actual_s_pos - p_pos) < 0.015:
-                contact_event = True
+            # 接触判定
+            if np.linalg.norm(s1_pos - p_pos) < 0.016:
+                p1_hit = True
+                max_p_speed = max(max_p_speed, np.linalg.norm(p_vel))
 
         if not terminated:
-            reward -= 0.1 # 時間ペナルティ
-            if contact_event:
-                reward += 10.0 # 接触ボーナス
-            # ボールを奥に送る動機づけ
-            reward += (0.2 - p_pos[1]) * 0.2
+            # 1. 追いかけ報酬 (距離が縮まればプラス)
+            p_pos_after = self.data.qpos[4:6]
+            s1_pos_after = self.data.qpos[0:2] + np.array([0, -0.105])
+            dist_after = np.linalg.norm(s1_pos_after - p_pos_after)
+            reward += (dist_before - dist_after) * 50.0 # 距離の減少分を報酬化
+            
+            # 2. 接触報酬
+            if p1_hit:
+                reward += 100.0 + max_p_speed * 20.0
+            
+            # 3. ボール位置報酬
+            reward += p_pos_after[1] * 2.0
+            
+            # 時間・滑らかさ
+            reward -= 0.1
+            reward -= np.linalg.norm(action - self.prev_action) * 0.1
 
-        obs = self._get_obs()
-        truncated = self.data.time > 15.0
+        self.prev_action = action.copy()
+        obs = self._get_obs_p1()
+        truncated = self.data.time > 10.0
         return obs, reward, terminated, truncated, {}
 
     def render(self):

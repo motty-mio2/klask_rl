@@ -14,7 +14,7 @@
         <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
         <material name="board_mat" rgba="0.4 0.2 0.1 1" reflectance="0.1"/>
         <material name="striker_mat" rgba="0.1 0.1 0.1 1" reflectance="0.5"/>
-        <material name="striker_opp_mat" rgba="0.1 0.1 0.8 1" reflectance="0.5"/> <!-- 相手は青 -->
+        <material name="striker_opp_mat" rgba="0.1 0.1 0.8 1" reflectance="0.5"/>
         <material name="puck_mat" rgba="1 0.8 0 1" reflectance="0.5"/>
     </asset>
 
@@ -22,11 +22,9 @@
         <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" castshadow="true"/>
         <geom name="floor" type="plane" size="1 1 0.01" pos="0 0 -0.05" material="grid"/>
         
-        <!-- ボード -->
         <body name="board" pos="0 0 0">
             <geom type="mesh" mesh="board_mesh" material="board_mat" contype="0" conaffinity="0"/>
             <geom type="box" size="0.1585 0.210 0.01" pos="0 0 -0.01" rgba="0 0 0 0"/>
-            <!-- 外壁 -->
             <geom type="box" size="0.01 0.210 0.03" pos="-0.1685 0 0.02" rgba="0.5 0.3 0.1 0.2"/>
             <geom type="box" size="0.01 0.210 0.03" pos="0.1685 0 0.02" rgba="0.5 0.3 0.1 0.2"/>
             <geom type="box" size="0.1585 0.01 0.03" pos="0 0.220 0.02" rgba="0.5 0.3 0.1 0.2"/>
@@ -36,34 +34,32 @@
             <site name="hole_opponent" pos="0 0.192 0.001" size="0.018 0.001" type="cylinder" rgba="0 0 0 0.8"/>
         </body>
         
-        <!-- ストライカー (プレイヤー1: 手前) -->
+        <!-- Dampingを50, Actuatorのkpを1000に調整（振動抑制） -->
         <body name="striker" pos="0 -0.105 0.001">
-            <joint name="striker_x" type="slide" axis="1 0 0" range="-0.1511 0.1511" limited="true" damping="100"/>
-            <joint name="striker_y" type="slide" axis="0 1 0" range="-0.0976 0.0976" limited="true" damping="100"/>
+            <joint name="striker_x" type="slide" axis="1 0 0" range="-0.1511 0.1511" limited="true" damping="50"/>
+            <joint name="striker_y" type="slide" axis="0 1 0" range="-0.0976 0.0976" limited="true" damping="50"/>
             <geom type="mesh" mesh="striker_mesh" material="striker_mat" contype="0" conaffinity="0"/>
             <geom type="cylinder" size="0.0074 0.005" pos="0 0 0.005" mass="0.1" friction="0.1 0.005 0.0001"/>
         </body>
 
-        <!-- ストライカー (プレイヤー2: 相手側) -->
         <body name="striker_opp" pos="0 0.105 0.001">
-            <joint name="striker_opp_x" type="slide" axis="1 0 0" range="-0.1511 0.1511" limited="true" damping="100"/>
-            <joint name="striker_opp_y" type="slide" axis="0 1 0" range="-0.0976 0.0976" limited="true" damping="100"/>
+            <joint name="striker_opp_x" type="slide" axis="1 0 0" range="-0.1511 0.1511" limited="true" damping="50"/>
+            <joint name="striker_opp_y" type="slide" axis="0 1 0" range="-0.0976 0.0976" limited="true" damping="50"/>
             <geom type="mesh" mesh="striker_mesh" material="striker_opp_mat" contype="0" conaffinity="0"/>
             <geom type="cylinder" size="0.0074 0.005" pos="0 0 0.005" mass="0.1" friction="0.1 0.005 0.0001"/>
         </body>
 
-        <!-- ボール -->
         <body name="puck" pos="0 0 0.01">
             <joint name="puck_free" type="free"/>
             <geom type="mesh" mesh="ball_mesh" material="puck_mat" contype="0" conaffinity="0"/>
-            <geom type="sphere" size="0.0075" mass="0.005" friction="0.05 0.005 0.0001"/>
+            <geom name="puck" type="sphere" size="0.0075" mass="0.005" friction="0.05 0.005 0.0001"/>
         </body>
     </worldbody>
 
     <actuator>
-        <position name="act_x" joint="striker_x" kp="3000" ctrlrange="-0.1511 0.1511" forcerange="-50 50"/>
-        <position name="act_y" joint="striker_y" kp="3000" ctrlrange="-0.0976 0.0976" forcerange="-50 50"/>
-        <position name="act_opp_x" joint="striker_opp_x" kp="3000" ctrlrange="-0.1511 0.1511" forcerange="-50 50"/>
-        <position name="act_opp_y" joint="striker_opp_y" kp="3000" ctrlrange="-0.0976 0.0976" forcerange="-50 50"/>
+        <position name="act_x" joint="striker_x" kp="1000" ctrlrange="-0.1511 0.1511" forcerange="-50 50"/>
+        <position name="act_y" joint="striker_y" kp="1000" ctrlrange="-0.0976 0.0976" forcerange="-50 50"/>
+        <position name="act_opp_x" joint="striker_opp_x" kp="1000" ctrlrange="-0.1511 0.1511" forcerange="-50 50"/>
+        <position name="act_opp_y" joint="striker_opp_y" kp="1000" ctrlrange="-0.0976 0.0976" forcerange="-50 50"/>
     </actuator>
 </mujoco>

@@ -15,11 +15,12 @@ def main():
         return
 
     model = PPO.load(model_path)
+    env.opponent_policy = model
 
     if not glfw.init():
         return
 
-    window = glfw.create_window(1200, 900, "Klask AI Minimal I/O Mode", None, None)
+    window = glfw.create_window(1200, 900, "Klask Debug Mode", None, None)
     if not window:
         glfw.terminate()
         return
@@ -38,14 +39,28 @@ def main():
 
     obs, _ = env.reset()
     
-    print("Enjoy Mode: 4 inputs, 2 outputs. Press ESC to exit.")
+    print("\n--- Klask Debug: Real-time Coordinates ---")
+    print("Format: [Puck X, Y] | [S1 X, Y] | [Action X, Y]")
 
+    step_count = 0
     while not glfw.window_should_close(window):
-        # AI モデル (4-in, 2-out) による推論
-        action, _states = model.predict(obs, deterministic=True)
+        # AI 推論
+        action, _ = model.predict(obs, deterministic=True)
+        
+        # 物理座標の取得 (デバッグ用)
+        p_pos = env.data.qpos[4:6] # ボール
+        s1_pos = env.data.qpos[0:2] + np.array([0, -0.105]) # P1位置
+        
+        # 10ステップに1回表示 (ログが早すぎるのを防ぐ)
+        if step_count % 10 == 0:
+            print(f"Puck: {p_pos[0]:>6.3f}, {p_pos[1]:>6.3f} | "
+                  f"S1: {s1_pos[0]:>6.3f}, {s1_pos[1]:>6.3f} | "
+                  f"Act: {action[0]:>6.3f}, {action[1]:>6.3f}")
+        
         obs, reward, terminated, truncated, info = env.step(action)
         
         if terminated or truncated:
+            print("--- Reset Episode ---")
             obs, _ = env.reset()
 
         viewport = glfw.get_framebuffer_size(window)
@@ -55,6 +70,7 @@ def main():
         glfw.swap_buffers(window)
         glfw.poll_events()
         time.sleep(0.01)
+        step_count += 1
 
     glfw.terminate()
 
