@@ -5,7 +5,7 @@ import numpy as np
 import os
 
 class KlaskEnv(gym.Env):
-    """Klask 環境: 攻撃的 Self-Play 版 (速攻 & クリア重視)"""
+    """Klask 環境: 壁張り付き解消・ボール追従強化版"""
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
 
     def __init__(self, render_mode=None):
@@ -14,10 +14,6 @@ class KlaskEnv(gym.Env):
         xml_path = os.path.join(os.path.dirname(__file__), "../../model/klask.xml")
         self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)
-        
-        # ボールを極限まで滑りやすく
-        puck_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'puck')
-        self.model.geom_friction[puck_id] = [0.003, 0.003, 0.0001]
         
         self.render_mode = render_mode
         self.viewer = None
@@ -47,15 +43,22 @@ class KlaskEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
-        # センター付近から開始
-        self.data.qpos[4] = self.np_random.uniform(-0.05, 0.05)
-        self.data.qpos[5] = self.np_random.uniform(-0.05, 0.05)
-        self.data.qvel[4:6] = self.np_random.uniform(-0.5, 0.5, size=2)
+        
+        # 学習初期はボールをプレイヤーのすぐ近くに置く (50%の確率)
+        if self.np_random.random() < 0.5:
+            # プレイヤーの初期位置付近
+            self.data.qpos[4] = self.np_random.uniform(-0.05, 0.05)
+            self.data.qpos[5] = self.np_random.uniform(-0.15, -0.05)
+        else:
+            self.data.qpos[4] = self.np_random.uniform(-0.1, 0.1)
+            self.data.qpos[5] = self.np_random.uniform(-0.1, 0.15)
+            
         mujoco.mj_forward(self.model, self.data)
         self.prev_action = np.zeros(2)
         return self._get_obs_p1(), {}
 
     def step(self, action):
+        # 以前の状態
         p_pos_before = self.data.qpos[4:6].copy()
         s1_pos_before = self.data.qpos[0:2] + np.array([0, -0.105])
         dist_before = np.linalg.norm(s1_pos_before - p_pos_before)
@@ -73,7 +76,7 @@ class KlaskEnv(gym.Env):
         reward = 0.0
         terminated = False
         p1_hit = False
-        max_p_forward_vel = 0.0 # 相手方向への最高速度
+        max_p_v = 0.0
         
         for _ in range(5):
             mujoco.mj_step(self.model, self.data)
@@ -82,48 +85,41 @@ class KlaskEnv(gym.Env):
             s1_pos = self.data.qpos[0:2] + np.array([0, -0.105])
             s2_pos = self.data.qpos[2:4] + np.array([0, 0.105])
             
-            # --- 判定 (報酬を大幅増額) ---
+            # --- 厳格な中心座標判定 ---
             if np.linalg.norm(p_pos - self.hole_p2) < self.hole_radius: reward += 5000.0; terminated = True; break
             if np.linalg.norm(p_pos - self.hole_p1) < self.hole_radius: reward -= 2000.0; terminated = True; break
             if np.linalg.norm(s1_pos - self.hole_p1) < self.hole_radius: reward -= 5000.0; terminated = True; break
             if np.linalg.norm(s2_pos - self.hole_p2) < self.hole_radius: reward += 2000.0; terminated = True; break
             
-            # 接触判定 & 相手側への速度成分(vy)を記録
             if np.linalg.norm(s1_pos - p_pos) < 0.016:
                 p1_hit = True
-                max_p_forward_vel = max(max_p_forward_vel, p_vel[1])
+                max_p_v = max(max_p_v, np.linalg.norm(p_vel))
 
         if not terminated:
             p_pos_after = self.data.qpos[4:6]
             s1_pos_after = self.data.qpos[0:2] + np.array([0, -0.105])
             dist_after = np.linalg.norm(s1_pos_after - p_pos_after)
             
-            # 1. 追いかけ報酬 (ある程度近づくまで)
-            if dist_after > 0.03: # ボールの近く(3cm)までは引き寄せる
-                reward += (dist_before - dist_after) * 30.0
+            # 1. 追いかけ報酬 (差分報酬ではなく、距離が近いこと自体への報酬)
+            # 距離が離れるほどペナルティを与える (磁力のように引き寄せる)
+            reward -= dist_after * 5.0
             
-            # 2. 攻撃報酬: 相手方向に速く弾く
-            if p1_hit and max_p_forward_vel > 0.1:
-                reward += max_p_forward_vel * 100.0 # シュートへの大きなインセンティブ
+            # 2. 接触報酬 (大幅増量)
+            if p1_hit:
+                reward += 200.0 + max_p_v * 50.0
             
-            # 3. 陣地ペナルティ: 自陣にボールがあるだけで微量の罰 (早くクリアしろ)
-            if p_pos_after[1] < 0:
-                reward -= 0.2
-            else:
-                reward += p_pos_after[1] * 5.0 # 相手陣地に押し込む報酬
+            # 3. ボールを奥へやる報酬
+            reward += p_pos_after[1] * 10.0
             
             # 時間・滑らかさ
             reward -= 0.1
-            reward -= np.linalg.norm(action - self.prev_action) * 0.1
+            # 振動を抑えるための微小なアクション抑制
+            reward -= np.linalg.norm(action - self.prev_action) * 0.05
 
         self.prev_action = action.copy()
         obs = self._get_obs_p1()
-        truncated = self.data.time > 12.0 # 1試合を少し短縮
+        truncated = self.data.time > 10.0
         return obs, reward, terminated, truncated, {}
 
     def render(self):
-        if self.render_mode == "human":
-            if self.viewer is None:
-                from mujoco import viewer
-                self.viewer = viewer.launch_passive(self.model, self.data)
-            self.viewer.sync()
+        pass
