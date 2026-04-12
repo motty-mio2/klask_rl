@@ -1,21 +1,21 @@
+import mujoco  # type: ignore
+import glfw  # type: ignore
+import numpy as np
 import os
 import time
-
-import glfw
-import mujoco
-import numpy as np
-from env import KlaskEnv
 from stable_baselines3 import PPO
+from env import KlaskEnv
+from typing import Any
 
 # マウス操作用のグローバル変数
 button_left = False
 button_middle = False
 button_right = False
-lastx = 0
-lasty = 0
+lastx: float = 0
+lasty: float = 0
 
 
-def main():
+def main() -> None:
     env = KlaskEnv()
     model_path = "models/klask_ppo_model"
 
@@ -49,11 +49,9 @@ def main():
     cam.lookat = np.array([0, 0, 0])
 
     # マウスコールバック
-    def mouse_button(window, button, act, mods):
+    def mouse_button(window: Any, button: int, act: int, mods: int) -> None:
         global button_left, button_middle, button_right
-        button_left = (
-            glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS
-        )
+        button_left = glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS
         button_middle = (
             glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_MIDDLE) == glfw.PRESS
         )
@@ -61,7 +59,7 @@ def main():
             glfw.get_mouse_button(window, glfw.MOUSE_BUTTON_RIGHT) == glfw.PRESS
         )
 
-    def mouse_move(window, xpos, ypos):
+    def mouse_move(window: Any, xpos: float, ypos: float) -> None:
         global lastx, lasty
         dx = xpos - lastx
         dy = ypos - lasty
@@ -71,7 +69,7 @@ def main():
         if not button_left and not button_middle and not button_right:
             return
 
-        width, height = glfw.get_window_size(window)
+        _, height = glfw.get_window_size(window)
 
         # どのボタンが押されているかでカメラ操作を切り替え
         mod_shift = (
@@ -89,9 +87,9 @@ def main():
 
         mujoco.mjv_moveCamera(env.model, action, dx / height, dy / height, scene, cam)
 
-    def scroll(window, xoffset, ypos):
+    def scroll(window: Any, xoffset: float, yoffset: float) -> None:
         mujoco.mjv_moveCamera(
-            env.model, mujoco.mjtMouse.mjMOUSE_ZOOM, 0, -0.05 * ypos, scene, cam
+            env.model, mujoco.mjtMouse.mjMOUSE_ZOOM, 0, -0.05 * yoffset, scene, cam
         )
 
     glfw.set_mouse_button_callback(window, mouse_button)
@@ -108,7 +106,7 @@ def main():
 
     while not glfw.window_should_close(window):
         action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = env.step(action)
+        obs, _reward, terminated, truncated, _info = env.step(action)
 
         if terminated or truncated:
             obs, _ = env.reset()
