@@ -1,5 +1,5 @@
 import os
-from typing import Any, cast
+from typing import Any
 
 import torch as th
 from env import KlaskEnv
@@ -22,15 +22,21 @@ class SelfPlayCallback(BaseCallback):
 
 
 class OnnxablePolicy(th.nn.Module):
-    """ONNX出力用にポリシーをラップするクラス"""
+    """
+    公式ドキュメント推奨のONNX出力用ラッパー。
+    不要な分布計算を省き、決定論的な行動出力を保証します。
+    """
 
-    def __init__(self, policy: Any) -> None:
+    def __init__(self, extractor: th.nn.Module, action_net: th.nn.Module) -> None:
         super().__init__()
-        self.policy = policy
+        self.extractor = extractor
+        self.action_net = action_net
 
     def forward(self, observation: th.Tensor) -> th.Tensor:
-        # 決定論的な行動 (deterministic=True) を出力
-        return cast(th.Tensor, self.policy.get_distribution(observation).mode())
+        # extractor で特徴量を抽出し、action_net で行動を出力
+        # 内部的にはこれが deterministic=True の時の挙動と一致します
+        action_hidden, _ = self.extractor(observation)
+        return self.action_net(action_hidden)
 
 
 def train() -> None:
@@ -57,8 +63,11 @@ def train() -> None:
     model.save("models/klask_ppo_model")
     print("SB3 Model saved.")
 
-    # 2. ONNX形式での出力
-    onnxable_model = OnnxablePolicy(model.policy)
+    # 2. ONNX形式での出力 (公式ドキュメント準拠)
+    # PPO.policy は ActorCriticPolicy オブジェクト
+    policy = model.policy
+    onnxable_model = OnnxablePolicy(policy.mlp_extractor, policy.action_net)
+
     observation_size = model.observation_space.shape
     if observation_size is None:
         return
