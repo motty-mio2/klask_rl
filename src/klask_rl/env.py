@@ -330,6 +330,11 @@ class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
             if puck_y_diff > 0:
                 reward += puck_y_diff * 150.0
 
+            # 4. ボールが自陣 (y < 0) にあることに対するペナルティ (逃げ腰・放置防止)
+            # 自陣の奥（ゴールに近いほど）にある時間が長いほどペナルティが強くなる
+            if p_pos_after[1] < 0:
+                reward += float(p_pos_after[1] * config.PENALTY_PUCK_IN_OWN_HALF)
+
             # 時間・滑らかさ (タイムペナルティを強めて膠着を防止)
             reward -= 0.5
             # 振動を抑えるための微小なアクション抑制
