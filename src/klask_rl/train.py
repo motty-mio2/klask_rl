@@ -1,24 +1,52 @@
 import os
 from typing import Any
 
+import numpy as np
 import torch as th
 from env import KlaskEnv
 from utils import get_device
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 
+import config
+
 
 class SelfPlayCallback(BaseCallback):
-    """学習中のモデルを環境の練習相手としてセットするコールバック"""
+    """学習中のモデルを環境の練習相手としてセットするコールバック（チェックポイント保存・対戦相手ランダム選択対応）"""
 
     def __init__(self, verbose: int = 0) -> None:
         super().__init__(verbose)
+        self.checkpoint_dir = "models/checkpoints"
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        self.saved_checkpoints = []
+        self.policy_cache = {}  # {ファイルパス: PPOモデルオブジェクト}
 
     def _on_step(self) -> bool:
-        # 1000ステップごとに練習相手の思考を更新
+        # 1. 定期的なチェックポイント保存
+        if self.n_calls % config.SAVE_CHECKPOINT_STEPS == 0:
+            checkpoint_path = os.path.join(self.checkpoint_dir, f"klask_ppo_model_{self.num_timesteps}_steps")
+            self.model.save(checkpoint_path)
+            self.saved_checkpoints.append(checkpoint_path)
+            if self.verbose > 0:
+                print(f"\n[SelfPlayCallback] Saved checkpoint to {checkpoint_path}")
+
+        # 2. 1000ステップごとに練習相手の思考を更新
         if self.n_calls % 1000 == 0:
-            # training_env は VecEnv なので env_method を使用
-            self.training_env.env_method("set_opponent_policy", self.model)
+            # 80%の確率で最新モデル、20%の確率で過去のチェックポイントからランダム
+            # (ただし、過去のチェックポイントが1つ以上保存されている場合)
+            if len(self.saved_checkpoints) > 0 and np.random.rand() < 0.2:
+                random_cp_path = np.random.choice(self.saved_checkpoints)
+                if random_cp_path not in self.policy_cache:
+                    self.policy_cache[random_cp_path] = PPO.load(random_cp_path, device=self.model.device)
+                
+                opponent_model = self.policy_cache[random_cp_path]
+                self.training_env.env_method("set_opponent_policy", opponent_model)
+                if self.verbose > 0:
+                    print(f"\n[SelfPlayCallback] Set opponent to past checkpoint: {random_cp_path}")
+            else:
+                self.training_env.env_method("set_opponent_policy", self.model)
+                if self.verbose > 0:
+                    print("\n[SelfPlayCallback] Set opponent to latest model")
         return True
 
 

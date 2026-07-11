@@ -40,8 +40,9 @@ class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
 
         self.range_x = np.array([-0.1511, 0.1511])
         self.range_y = np.array([-0.0976, 0.0976])
-        self.hole_p1 = np.array([0, -0.192])
-        self.hole_p2 = np.array([0, 0.192])
+        # 修正: XMLの実際の座標 (pos="0 +/-0.174 0.001") に合わせる
+        self.hole_p1 = np.array([0, -0.174])
+        self.hole_p2 = np.array([0, 0.174])
         self.hole_radius = 0.018
         self.striker_radius = 0.0074
         self.puck_radius = 0.0075
@@ -87,6 +88,10 @@ class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
         self.init_puck_inertia = self.model.body_inertia[self.puck_body_id].copy()
         self.init_s1_inertia = self.model.body_inertia[self.s1_body_id].copy()
         self.init_s2_inertia = self.model.body_inertia[self.s2_body_id].copy()
+
+        # 報酬設計用の状態変数
+        self.was_contact = False
+        self.prev_puck_y = 0.0
 
     def _get_obs_p1_single(self) -> np.ndarray:
         p_pos = self.data.qpos[4:6]
@@ -150,6 +155,10 @@ class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
         for _ in range(self.num_history):
             self.obs_queue_p1.append(obs_p1_single)
             self.obs_queue_p2.append(obs_p2_single)
+
+        # 報酬設計用状態変数のリセット
+        self.was_contact = False
+        self.prev_puck_y = float(self.data.qpos[5])
 
         # 遅延バッファの初期化
         self.action_buffer_p1.clear()
@@ -306,12 +315,20 @@ class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
             # 1. 追いかけ報酬 (磁力報酬)
             reward -= dist_after * 5.0
 
-            # 2. 接触報酬
+            # 2. 接触報酬 (「接触し続ける」のではなく「新しく接触した瞬間」のみに限定)
             if p1_hit:
-                reward += 200.0 + max_p_v * 50.0
+                # 前のステップで未接触だった場合のみ、接触開始ボーナスを与える
+                if not self.was_contact:
+                    reward += 200.0
+                # ボールに十分なエネルギー（速度）を与えた場合のみ、速度ボーナスを与える
+                if max_p_v > 0.05:
+                    reward += max_p_v * 50.0
 
-            # 3. ボールを奥へやる報酬
-            reward += float(p_pos_after[1] * 10.0)
+            # 3. ボールを奥へやる押し込み報酬 (位置の絶対値ではなく、前ステップより奥に進んだ変化量に基づく)
+            # ボールが相手陣地（Y正方向）にあり、かつ前進した（差分がプラス）場合のみ報酬を与える
+            puck_y_diff = p_pos_after[1] - self.prev_puck_y
+            if p_pos_after[1] > 0 and puck_y_diff > 0:
+                reward += puck_y_diff * 100.0
 
             # 時間・滑らかさ
             reward -= 0.1
@@ -319,6 +336,10 @@ class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
             reward -= float(np.linalg.norm(action - self.prev_action) * 0.05)
 
         self.prev_action = action.copy()
+
+        # 状態変数の更新
+        self.was_contact = p1_hit
+        self.prev_puck_y = float(self.data.qpos[5]) if not terminated else 0.0
 
         # 履歴バッファの更新
         obs_p1_single = self._get_obs_p1_single()
