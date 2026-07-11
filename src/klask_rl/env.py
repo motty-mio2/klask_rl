@@ -286,19 +286,19 @@ class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
 
             # --- 厳格な中心座標判定 ---
             if np.linalg.norm(p_pos - self.hole_p2) < self.hole_radius:
-                reward += 5000.0
+                reward += 3000.0  # 得点ボーナス (少しマイルドに)
                 terminated = True
                 break
             if np.linalg.norm(p_pos - self.hole_p1) < self.hole_radius:
-                reward -= 2000.0
+                reward -= 1000.0  # 失点ペナルティ (逃げ腰防止のため緩和)
                 terminated = True
                 break
             if np.linalg.norm(s1_pos - self.hole_p1) < self.hole_radius:
-                reward -= 5000.0
+                reward -= 1500.0  # 自滅ペナルティ (過剰な恐怖によるすくみを防ぐため大幅緩和)
                 terminated = True
                 break
             if np.linalg.norm(s2_pos - self.hole_p2) < self.hole_radius:
-                reward += 2000.0
+                reward += 1000.0  # 相手自滅ボーナス
                 terminated = True
                 break
 
@@ -325,13 +325,13 @@ class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
                     reward += max_p_v * 50.0
 
             # 3. ボールを奥へやる押し込み報酬 (位置の絶対値ではなく、前ステップより奥に進んだ変化量に基づく)
-            # ボールが相手陣地（Y正方向）にあり、かつ前進した（差分がプラス）場合のみ報酬を与える
+            # 自陣からでも、ボールを奥（Y正方向）に押し進めたら変化量に応じて報酬
             puck_y_diff = p_pos_after[1] - self.prev_puck_y
-            if p_pos_after[1] > 0 and puck_y_diff > 0:
-                reward += puck_y_diff * 100.0
+            if puck_y_diff > 0:
+                reward += puck_y_diff * 150.0
 
-            # 時間・滑らかさ
-            reward -= 0.1
+            # 時間・滑らかさ (タイムペナルティを強めて膠着を防止)
+            reward -= 0.5
             # 振動を抑えるための微小なアクション抑制
             reward -= float(np.linalg.norm(action - self.prev_action) * 0.05)
 

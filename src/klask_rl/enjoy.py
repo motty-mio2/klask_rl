@@ -1,3 +1,4 @@
+import torch as th  # macOSでのスレッド・GUI競合対策のため、最優先でインポート
 import os
 import time
 import argparse
