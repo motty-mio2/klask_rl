@@ -1,5 +1,6 @@
 import os
 import time
+import argparse
 from typing import Any
 
 import glfw  # type: ignore
@@ -18,15 +19,25 @@ lasty: float = 0
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Enjoy trained Klask agent.")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="models/klask_ppo_model",
+        help="Path to the trained SB3 model (without .zip extension)",
+    )
+    args = parser.parse_args()
+
     env = KlaskEnv()
-    model_path = "models/klask_ppo_model"
+    model_path = args.model
 
     if not os.path.exists(model_path + ".zip"):
-        print("Error: Model not found.")
+        print(f"Error: Model not found at '{model_path}.zip'.")
         return
 
     device = get_device()
     print(f"Using device: {device}")
+    print(f"Loading model: {model_path}")
     model = PPO.load(model_path, device=device)
     env.opponent_policy = model
 
