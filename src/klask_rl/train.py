@@ -87,6 +87,7 @@ def train() -> None:
         batch_size=128,
         n_epochs=10,
         gamma=0.99,
+        ent_coef=0.01,  # 探索を強化してすくみから脱出させる
     )
 
     observation_size = model.observation_space.shape
@@ -94,7 +95,7 @@ def train() -> None:
         return
     obs_dim = observation_size[0]
     print(f"Starting Self-Play Training ({obs_dim}-in, 2-out)...")
-    model.learn(total_timesteps=1000000, callback=SelfPlayCallback(), progress_bar=True)
+    model.learn(total_timesteps=2000000, callback=SelfPlayCallback(), progress_bar=True)
 
     # 1. SB3標準形式での保存
     model.save("models/klask_ppo_model")
