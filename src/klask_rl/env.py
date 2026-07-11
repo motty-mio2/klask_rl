@@ -360,5 +360,10 @@ class KlaskEnv(gym.Env[np.ndarray, np.ndarray]):
         pass
 
     def set_opponent_policy(self, policy: Any) -> None:
-        self.opponent_policy = policy
+        if isinstance(policy, str):
+            from stable_baselines3 import PPO
+            self.opponent_policy = PPO.load(policy, device="cpu")
+        else:
+            self.opponent_policy = policy
+
 
