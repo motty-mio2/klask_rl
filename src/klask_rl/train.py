@@ -1,5 +1,4 @@
 import os
-import argparse
 from typing import Any
 
 import numpy as np
@@ -17,10 +16,9 @@ import config
 class SelfPlayCallback(BaseCallback):
     """学習中のモデルを環境の練習相手としてセットするコールバック（チェックポイント保存・対戦相手ランダム選択対応）"""
 
-    def __init__(self, run_name: str, verbose: int = 0) -> None:
+    def __init__(self, verbose: int = 0) -> None:
         super().__init__(verbose)
-        self.run_name = run_name
-        self.checkpoint_dir = f"models/checkpoints/{run_name}"
+        self.checkpoint_dir = "models/checkpoints"
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self.saved_checkpoints = []
 
@@ -45,7 +43,7 @@ class SelfPlayCallback(BaseCallback):
                     print(f"\n[SelfPlayCallback] Set opponent to past checkpoint: {random_cp_path}")
             else:
                 # 最新モデルを一時ファイルとして保存し、そのパスを送信
-                latest_path = os.path.join(self.checkpoint_dir, f"{self.run_name}_latest")
+                latest_path = os.path.join(self.checkpoint_dir, "klask_ppo_model_latest")
                 self.model.save(latest_path)
                 self.training_env.env_method("set_opponent_policy", latest_path)
                 if self.verbose > 0:
@@ -72,48 +70,33 @@ class OnnxablePolicy(th.nn.Module):
 
 
 def train() -> None:
-    parser = argparse.ArgumentParser(description="Train Klask RL Agent with Self-Play and DR")
-    parser.add_argument(
-        "--run-name",
-        type=str,
-        default="default",
-        help="Identifier name for this training run"
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for environment and model"
-    )
-    args = parser.parse_args()
-
     # 並列環境の構築 (SubprocVecEnv による 4 並列実行)
     env = make_vec_env(
         KlaskEnv,
         n_envs=config.NUM_ENVS,
-        seed=args.seed,
+        seed=42,
         vec_env_cls=SubprocVecEnv
     )
 
-    os.makedirs(f"models/checkpoints/{args.run_name}", exist_ok=True)
+    os.makedirs("models", exist_ok=True)
 
     device = get_device()
     print(f"Using device: {device}")
-    print(f"Run Name: {args.run_name} | Seed: {args.seed} | Parallel Envs: {config.NUM_ENVS}")
+    print(f"Parallel Envs: {config.NUM_ENVS}")
 
     model = PPO(
         "MlpPolicy",
         env,
         device=device,
         verbose=1,
-        tensorboard_log=f"./klask_tensorboard/{args.run_name}/",
+        tensorboard_log="./klask_tensorboard/",
         learning_rate=3e-4,
         n_steps=2048,
         batch_size=128,
         n_epochs=10,
         gamma=0.99,
-        ent_coef=0.01,
-        seed=args.seed,
+        ent_coef=config.ENT_COEF,
+        seed=42,
     )
 
     observation_size = model.observation_space.shape
@@ -122,11 +105,11 @@ def train() -> None:
     obs_dim = observation_size[0]
     print(f"Starting Self-Play Training ({obs_dim}-in, 2-out)...")
     
-    callback = SelfPlayCallback(run_name=args.run_name, verbose=1)
+    callback = SelfPlayCallback(verbose=1)
     model.learn(total_timesteps=2000000, callback=callback, progress_bar=True)
 
     # 1. SB3標準形式での保存
-    model_path = f"models/klask_ppo_model_{args.run_name}"
+    model_path = "models/klask_ppo_model"
     model.save(model_path)
     print(f"SB3 Model saved to {model_path}.zip")
 
@@ -140,7 +123,7 @@ def train() -> None:
 
     # 警告対策: テンソルを同じデバイス (CPU / CUDA / MPS) に転送
     dummy_input = th.randn(1, *list(observation_size)).to(device)
-    onnx_path = f"models/klask_ppo_model_{args.run_name}.onnx"
+    onnx_path = "models/klask_ppo_model.onnx"
 
     # エラー対策: opset_version を 18 に引き上げて Gemm アダプタエラーを回避
     th.onnx.export(
