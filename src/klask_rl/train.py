@@ -3,6 +3,7 @@ from typing import Any
 
 import torch as th
 from env import KlaskEnv
+from utils import get_device
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 
@@ -44,9 +45,13 @@ def train() -> None:
 
     os.makedirs("models", exist_ok=True)
 
+    device = get_device()
+    print(f"Using device: {device}")
+
     model = PPO(
         "MlpPolicy",
         env,
+        device=device,
         verbose=1,
         tensorboard_log="./klask_tensorboard/",
         learning_rate=3e-4,
@@ -56,7 +61,11 @@ def train() -> None:
         gamma=0.99,
     )
 
-    print("Starting Self-Play Training (4-in, 2-out)...")
+    observation_size = model.observation_space.shape
+    if observation_size is None:
+        return
+    obs_dim = observation_size[0]
+    print(f"Starting Self-Play Training ({obs_dim}-in, 2-out)...")
     model.learn(total_timesteps=1000000, callback=SelfPlayCallback(), progress_bar=True)
 
     # 1. SB3標準形式での保存

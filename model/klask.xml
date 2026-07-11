@@ -39,20 +39,20 @@
             <joint name="striker_x" type="slide" axis="1 0 0" range="-0.1511 0.1511" limited="true" damping="50"/>
             <joint name="striker_y" type="slide" axis="0 1 0" range="-0.0976 0.0976" limited="true" damping="50"/>
             <geom type="mesh" mesh="striker_mesh" material="striker_mat" contype="0" conaffinity="0"/>
-            <geom type="cylinder" size="0.0074 0.005" pos="0 0 0.005" mass="0.1" friction="0.1 0.005 0.0001"/>
+            <geom name="striker_geom" type="cylinder" size="0.0074 0.005" pos="0 0 0.005" mass="0.1" friction="0.1 0.005 0.0001"/>
         </body>
 
         <body name="striker_opp" pos="0 0.105 0.001">
             <joint name="striker_opp_x" type="slide" axis="1 0 0" range="-0.1511 0.1511" limited="true" damping="50"/>
             <joint name="striker_opp_y" type="slide" axis="0 1 0" range="-0.0976 0.0976" limited="true" damping="50"/>
             <geom type="mesh" mesh="striker_mesh" material="striker_opp_mat" contype="0" conaffinity="0"/>
-            <geom type="cylinder" size="0.0074 0.005" pos="0 0 0.005" mass="0.1" friction="0.1 0.005 0.0001"/>
+            <geom name="striker_opp_geom" type="cylinder" size="0.0074 0.005" pos="0 0 0.005" mass="0.1" friction="0.1 0.005 0.0001"/>
         </body>
 
         <body name="puck" pos="0 0 0.01">
             <joint name="puck_free" type="free"/>
             <geom type="mesh" mesh="ball_mesh" material="puck_mat" contype="0" conaffinity="0"/>
-            <geom name="puck" type="sphere" size="0.0075" mass="0.005" friction="0.05 0.005 0.0001"/>
+            <geom name="puck_geom" type="sphere" size="0.0075" mass="0.005" friction="0.05 0.005 0.0001"/>
         </body>
     </worldbody>
 

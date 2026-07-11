@@ -7,6 +7,7 @@ import mujoco  # type: ignore
 import numpy as np
 from env import KlaskEnv
 from stable_baselines3 import PPO
+from utils import get_device
 
 # マウス操作用のグローバル変数
 button_left = False
@@ -24,7 +25,9 @@ def main() -> None:
         print("Error: Model not found.")
         return
 
-    model = PPO.load(model_path)
+    device = get_device()
+    print(f"Using device: {device}")
+    model = PPO.load(model_path, device=device)
     env.opponent_policy = model
 
     if not glfw.init():
