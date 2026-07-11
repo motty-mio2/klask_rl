@@ -76,18 +76,24 @@ def train() -> None:
     # PPO.policy は ActorCriticPolicy オブジェクト
     policy = model.policy
     onnxable_model = OnnxablePolicy(policy.mlp_extractor, policy.action_net)
+    
+    # 警告対策: エクスポート前にモデルを評価モード (eval) に設定
+    onnxable_model.eval()
 
     observation_size = model.observation_space.shape
     if observation_size is None:
         return
-    dummy_input = th.randn(1, *list(observation_size))
+    
+    # 警告対策: テンソルを同じデバイス (CPU / CUDA / MPS) に転送
+    dummy_input = th.randn(1, *list(observation_size)).to(device)
     onnx_path = "models/klask_ppo_model.onnx"
 
+    # エラー対策: opset_version を 18 に引き上げて Gemm アダプタエラーを回避
     th.onnx.export(
         onnxable_model,
         (dummy_input,),
         onnx_path,
-        opset_version=11,
+        opset_version=18,
         input_names=["observation"],
         output_names=["action"],
         dynamic_axes={
@@ -100,3 +106,4 @@ def train() -> None:
 
 if __name__ == "__main__":
     train()
+
