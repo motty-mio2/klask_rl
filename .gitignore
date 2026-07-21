@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
-
+models
+klask_tensorboard
 # Virtual environments
 .venv
